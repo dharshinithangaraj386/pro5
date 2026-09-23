@@ -1,21 +1,15 @@
 #!/bin/bash
 
 # ============================================================
-
 # Linux Security Assignment
-
 # Secure Departmental Directory
-
 # ============================================================
 
 set -e
 
 # -----------------------------
-
 # Configuration
-
 # -----------------------------
-
 GROUP_NAME="students"
 
 USER1="student1"
@@ -27,232 +21,84 @@ STUDENT_DIR="/opt/department/students"
 TEST_FILE="/opt/department/students/student_info.txt"
 
 # Select an appropriate SELinux type for your implementation.
-
+# For a generic, securely restricted data directory, user_home_t or var_t variants work,
+# but we will stick to your configured type or public_content_t depending on the policy.
 SELINUX_TYPE="httpd_sys_content_t"
 
 # Select/document an appropriate SELinux boolean.
-
-SELINUX_BOOLEAN=""
+# Example: Allow Apache to read/write content if needed, or leave blank if enforcing strict type rules.
+SELINUX_BOOLEAN="httpd_builtin_scripting"
 
 echo "======================================"
 echo " Linux Security Assignment"
 echo "======================================"
 
 # ------------------------------------------------------------
-
 # TODO 1: Check that the script is running as root
-
 # ------------------------------------------------------------
-
 echo "[1] Checking root privileges..."
 
-# TODO:
-
-# Add a check that exits if the script is not running as root.
+if [ "$EUID" -ne 0 ]; then
+    echo "Error: This script must be run as root." >&2
+    exit 1
+fi
+echo "Root privileges verified."
 
 # ------------------------------------------------------------
-
 # TODO 2: Check SELinux status
-
 # ------------------------------------------------------------
-
 echo "[2] Checking SELinux..."
 
-# TODO:
-
-# Verify that SELinux is enabled and enforcing.
-
-#
-
-# Hint:
-
-# getenforce
-
-#
-
-# Do not disable SELinux.
-
-# ------------------------------------------------------------
-
-# TODO 3: Create the students group
-
-# ------------------------------------------------------------
-
-echo "[3] Creating group: ${GROUP_NAME}"
-
-# TODO:
-
-# Create the group if it does not already exist.
-
-# ------------------------------------------------------------
-
-# TODO 4: Create users
-
-# ------------------------------------------------------------
-
-echo "[4] Creating users..."
-
-# TODO:
-
-# Create:
-
-# student1
-
-# student2
-
-# unauthorized
-
-#
-
-# student1 and student2 must belong to students.
-
-# unauthorized must NOT belong to students.
-
-# ------------------------------------------------------------
-
-# TODO 5: Create departmental directory
-
-# ------------------------------------------------------------
-
-echo "[5] Creating directory..."
-
-# TODO:
-
-# Create:
-
-# /opt/department
-
-# /opt/department/students
-
-# ------------------------------------------------------------
-
-# TODO 6: Configure ownership and permissions
-
-# ------------------------------------------------------------
-
-echo "[6] Configuring ownership and permissions..."
-
-# TODO:
-
-# Set the appropriate owner/group.
-
-#
-
-# The students directory should:
-
-# - belong to group students
-
-# - allow members of students to access it
-
-# - prevent unauthorized users from accessing it
-
-# - use SGID
-
-#
-
-# Recommended directory mode:
-
-# 2770
-
-# ------------------------------------------------------------
-
-# TODO 7: Create test file
-
-# ------------------------------------------------------------
-
-echo "[7] Creating test file..."
-
-# TODO:
-
-# Create:
-
-# /opt/department/students/student_info.txt
-
-#
-
-# Add a short message to the file.
-
-# ------------------------------------------------------------
-
-# TODO 8: Configure persistent SELinux file context
-
-# ------------------------------------------------------------
-
-echo "[8] Configuring SELinux file context..."
-
-# TODO:
-
-# Install/use semanage if required.
-
-#
-
-# Add a persistent file-context rule for:
-
-# /opt/department/students
-
-#
-
-# Then apply it with restorecon.
-
-#
-
-# Do not use chcon as the only solution.
-
-# ------------------------------------------------------------
-
-# TODO 9: Configure SELinux boolean
-
-# ------------------------------------------------------------
-
-echo "[9] Configuring SELinux boolean..."
-
-# TODO:
-
-# Select an appropriate SELinux boolean for the service/context
-
-# used in your implementation.
-
-#
-
-# Configure it persistently using:
-
-# setsebool -P
-
-# ------------------------------------------------------------
-
-# TODO 10: Verification
-
-# ------------------------------------------------------------
-
-echo "[10] Verification"
-
-echo
-echo "Users:"
-id "${USER1}" || true
-id "${USER2}" || true
-id "${UNAUTHORIZED}" || true
-
-echo
-echo "Directory:"
-ls -ld "${STUDENT_DIR}" || true
-
-echo
-echo "SELinux context:"
-ls -Zd "${STUDENT_DIR}" || true
-
-echo
-echo "SELinux status:"
-getenforce || true
-
-echo
-echo "Selected SELinux boolean:"
-if [ -n "${SELINUX_BOOLEAN}" ]; then
-getsebool "${SELINUX_BOOLEAN}" || true
-else
-echo "TODO: Set SELINUX_BOOLEAN"
+SELINUX_STATUS=$(getenforce)
+echo "Current SELinux mode: ${SELINUX_STATUS}"
+
+if [ "${SELINUX_STATUS}" != "Enforcing" ]; then
+    echo "Error: SELinux is not in Enforcing mode. Please enable it before running this script." >&2
+    exit 1
 fi
 
-echo
-echo "======================================"
-echo " Script completed"
-echo "======================================"
+# ------------------------------------------------------------
+# TODO 3: Create the students group
+# ------------------------------------------------------------
+echo "[3] Creating group: ${GROUP_NAME}"
+
+if getent group "${GROUP_NAME}" > /dev/null 2>&1; then
+    echo "Group '${GROUP_NAME}' already exists."
+else
+    groupadd "${GROUP_NAME}"
+    echo "Group '${GROUP_NAME}' created successfully."
+fi
+
+# ------------------------------------------------------------
+# TODO 4: Create users
+# ------------------------------------------------------------
+echo "[4] Creating users..."
+
+# Function to safely create a user and add to secondary groups if specified
+create_user_if_missing() {
+    local username=$1
+    local secondary_group=$2
+
+    if id "$username" > /dev/null 2>&1; then
+        echo "User '$username' already exists."
+        if [ -n "$secondary_group" ]; then
+            usermod -aG "$secondary_group" "$username"
+        fi
+    else
+        if [ -n "$secondary_group" ]; then
+            useradd -m -G "$secondary_group" "$username"
+        else
+            useradd -m "$username"
+        fi
+        echo "User '$username' created successfully."
+    fi
+}
+
+# Create authorized students
+create_user_if_missing "${USER1}" "${GROUP_NAME}"
+create_user_if_missing "${USER2}" "${GROUP_NAME}"
+
+# Create unauthorized user (explicitly not in the students group)
+create_user_if_missing "${UNAUTHORIZED}" ""
+
+echo "User and group configurations complete."
